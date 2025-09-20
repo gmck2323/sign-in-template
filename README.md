@@ -96,10 +96,11 @@ SESSION_COOKIE_SECRET=your_session_secret_here
 
 ### Database Schema
 
-The application uses two main tables:
+The application uses three main tables:
 
-- `auth_allowed_emails`: Stores the allow list with user roles
+- `auth_allowed_emails`: Stores the allow list with user roles and status
 - `auth_audit_log`: Tracks all authentication events for compliance
+- `auth_sessions`: Manages user sessions with expiration and security tracking
 
 ### Authentication Flow
 
@@ -114,11 +115,15 @@ The application uses two main tables:
 
 - Clerk-managed authentication and JWT verification
 - Case-insensitive email comparison
-- Secure HTTP-only cookies
-- Rate limiting on auth endpoints
+- Secure HTTP-only cookies with configurable security settings
+- Content Security Policy (CSP) with nonce-based script protection
+- Rate limiting on auth endpoints and API routes
+- Session security validation and timeout management
 - CSRF protection with state parameters
-- Comprehensive audit logging
+- Comprehensive security headers (HSTS, X-Frame-Options, etc.)
+- Comprehensive audit logging with detailed event tracking
 - Defense in depth (UI + API enforcement)
+- Role-based access control (admin, viewer, qa)
 
 ## API Endpoints
 
@@ -130,7 +135,10 @@ The application uses two main tables:
 - `POST /api/admin/users` - Add new user
 - `DELETE /api/admin/users/[email]` - Remove user
 - `PATCH /api/admin/users/[email]/toggle` - Toggle user status
-- `GET /api/admin/audit` - Get audit logs
+- `GET /api/admin/audit` - Get audit logs with filtering
+
+### Security & Utilities
+- `GET /api/csrf-token` - Get CSRF token for form protection
 
 ### Health Check
 - `GET /api/health` - Application health status
@@ -140,10 +148,11 @@ The application uses two main tables:
 Access the admin panel at `/admin` (admin role required) to:
 
 - View and manage the allow list
-- Add/remove users
+- Add/remove users with role assignment
 - Toggle user active status
-- View audit logs and statistics
+- View audit logs and statistics with filtering
 - Search and filter users
+- Monitor session activity and security events
 
 ## Deployment
 
@@ -196,6 +205,32 @@ npm run test:watch
 npm test -- auth.test.ts
 ```
 
+## Security Features
+
+### Content Security Policy (CSP)
+- Nonce-based script protection
+- Strict resource loading policies
+- Development debugging utilities for CSP violations
+
+### Session Security
+- Configurable session timeouts
+- Secure cookie settings (HttpOnly, SameSite, Secure)
+- Session validation and security checks
+- Automatic session cleanup
+
+### Rate Limiting
+- API endpoint protection
+- IP-based rate limiting
+- Configurable limits per endpoint
+
+### Security Headers
+- X-Frame-Options: DENY
+- X-Content-Type-Options: nosniff
+- X-XSS-Protection: 1; mode=block
+- Strict-Transport-Security with HSTS
+- Referrer-Policy: strict-origin-when-cross-origin
+- Permissions-Policy restrictions
+
 ## Security Considerations
 
 - Never commit `.env.local` or `.env` files
@@ -204,6 +239,8 @@ npm test -- auth.test.ts
 - Implement rate limiting in production
 - Use HTTPS in production
 - Keep dependencies updated
+- Review CSP violations in development
+- Monitor session security warnings
 
 ## Troubleshooting
 
@@ -213,6 +250,9 @@ npm test -- auth.test.ts
 2. **Clerk authentication failed** - Check Clerk configuration and API keys
 3. **Database connection failed** - Verify DATABASE_URL is correct
 4. **CORS errors** - Ensure NEXT_PUBLIC_APP_URL matches your domain
+5. **CSP violations** - Check browser console for blocked resources, use debug utilities
+6. **Session security warnings** - Review session configuration and security headers
+7. **Rate limiting errors** - Check rate limit configuration and IP restrictions
 
 ### Debug Mode
 
@@ -220,6 +260,9 @@ Set `NODE_ENV=development` to enable:
 - Detailed error messages
 - Additional logging
 - Development-specific Clerk features
+- CSP violation reporting in browser console
+- Session security debugging
+- Relaxed CSP for testing
 
 ## Contributing
 

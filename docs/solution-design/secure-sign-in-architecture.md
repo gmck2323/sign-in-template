@@ -91,7 +91,7 @@ Run your own email magic links (e.g., NextAuth + JWT + SMTP provider).
 CREATE TABLE auth_allowed_emails (
   email              CITEXT PRIMARY KEY,
   display_name       TEXT,
-  role               TEXT DEFAULT 'viewer',        -- optional: 'admin','qa'
+  role               TEXT DEFAULT 'viewer' CHECK (role IN ('admin', 'viewer', 'qa')),
   invited_by         TEXT,
   created_at         TIMESTAMPTZ DEFAULT now(),
   updated_at         TIMESTAMPTZ DEFAULT now(),
@@ -102,12 +102,25 @@ CREATE TABLE auth_allowed_emails (
 CREATE TABLE auth_audit_log (
   id                 BIGSERIAL PRIMARY KEY,
   email              CITEXT,
-  event              TEXT CHECK (event IN ('login_allow','login_deny','api_allow','api_deny')),
+  event              TEXT CHECK (event IN ('login_allow','login_deny','api_allow','api_deny','admin_add_user','admin_remove_user','admin_toggle_user')),
   path               TEXT,
   ip                 INET,
   user_agent         TEXT,
   ts                 TIMESTAMPTZ DEFAULT now(),
   details            JSONB
+);
+
+-- user sessions for tracking active sessions
+CREATE TABLE auth_sessions (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email              CITEXT NOT NULL,
+  session_token      TEXT UNIQUE NOT NULL,
+  created_at         TIMESTAMPTZ DEFAULT now(),
+  expires_at         TIMESTAMPTZ NOT NULL,
+  last_accessed      TIMESTAMPTZ DEFAULT now(),
+  ip_address         INET,
+  user_agent         TEXT,
+  active             BOOLEAN DEFAULT TRUE
 );
 ```
 
@@ -231,12 +244,16 @@ On change, invalidate sessions: store a `session_version` in user sessions and b
 ## 9) Security Considerations
 
 - **JWT verification**: Clerk handles JWT verification, signature validation, and key rotation.
-- **Short session TTL** + silent refresh; secure, HTTP-only, SameSite cookies.
-- **Rate limiting** on login and API endpoints (e.g., IP + email).
+- **Session management**: Configurable session timeouts, secure cookie settings, and session validation.
+- **Content Security Policy**: Nonce-based script protection with strict resource loading policies.
+- **Rate limiting**: API endpoint protection with IP-based rate limiting and configurable limits.
+- **Security headers**: Comprehensive security headers including X-Frame-Options, HSTS, X-XSS-Protection.
+- **Session security**: Validation of session requests, suspicious header detection, and security checks.
 - **Transport security**: HTTPS only; HSTS; CSP for the app.
 - **Email normalization**: compare using lowercased canonical emails.
 - **PII minimization**: store only what's needed (email, display name).
 - **Secrets**: Render environment variables; never commit secrets to repo.
+- **Audit logging**: Comprehensive logging of all authentication events and security violations.
 
 ## 10) Render.com Deployment Plan
 
@@ -285,21 +302,57 @@ On change, invalidate sessions: store a `session_version` in user sessions and b
 - Just-in-time invites (approve from Slack command).
 - SAML if later integrating with enterprise IdPs.
 
-## 13) Testing Strategy
+## 13) Enhanced Security Features
+
+### Content Security Policy (CSP)
+- Nonce-based script protection for inline scripts
+- Strict resource loading policies for external resources
+- Development debugging utilities for CSP violation reporting
+- Configurable CSP headers for different environments
+
+### Session Security
+- Configurable session timeouts and expiration
+- Secure cookie settings (HttpOnly, SameSite, Secure)
+- Session validation with suspicious request detection
+- Automatic session cleanup and invalidation
+
+### Rate Limiting
+- API endpoint protection with configurable limits
+- IP-based rate limiting with whitelist support
+- Per-endpoint rate limit configuration
+- Rate limit bypass for trusted sources
+
+### Security Headers
+- X-Frame-Options: DENY (clickjacking protection)
+- X-Content-Type-Options: nosniff (MIME sniffing protection)
+- X-XSS-Protection: 1; mode=block (XSS protection)
+- Strict-Transport-Security with HSTS (HTTPS enforcement)
+- Referrer-Policy: strict-origin-when-cross-origin
+- Permissions-Policy restrictions (camera, microphone, etc.)
+
+### Role-Based Access Control
+- Three-tier role system: admin, viewer, qa
+- Role-based API endpoint protection
+- Admin panel access control
+- Granular permission management
+
+## 14) Testing Strategy
 
 - Unit tests for Clerk integration, email normalization, allow-list checks.
 - Integration tests: login → callback → middleware pass/deny → API deny.
 - Security tests: session validation, allow-list enforcement, rate limits.
+- CSP violation testing and debugging utilities.
 - Load tests on middleware path to ensure minimal latency.
+- Security header validation tests.
 
-## 14) Cutover / Rollout
+## 15) Cutover / Rollout
 
 1. Deploy to staging with a small set of invited users.
 2. Verify audit logs and denial flows.
 3. Pen-test basic auth flows; check rate limits.
 4. Promote to production and invite the full QA list.
 
-## 15) Quick "Getting Started" Checklist
+## 16) Quick "Getting Started" Checklist
 
 1. Set up Clerk account and create application.
 2. Configure Clerk: set callback/logout URLs to your Render domain(s).
@@ -310,7 +363,7 @@ On change, invalidate sessions: store a `session_version` in user sessions and b
 7. Add audit logging + Slack notifications (optional).
 8. Test end-to-end on staging; then launch.
 
-## 16) FAQ
+## 17) FAQ
 
 **Q: Can I use Clerk while hosting on Render?**
 A: Yes. Clerk is independent of hosting. You'll configure Clerk callbacks to your Render app URLs and Clerk handles all authentication server-side.
