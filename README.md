@@ -1,6 +1,6 @@
 # Secure Sign-In Template
 
-A secure email-based allow list authentication template built with Next.js, TypeScript, and PostgreSQL. This template implements defense-in-depth authentication with comprehensive audit logging and admin management capabilities.
+A secure email-based allow list authentication template built with Next.js, TypeScript, and PostgreSQL. This template implements defense-in-depth authentication with comprehensive audit logging and admin management capabilities, leveraging Clerk for robust authentication handling.
 
 ## Features
 
@@ -11,7 +11,7 @@ A secure email-based allow list authentication template built with Next.js, Type
 - **Comprehensive audit logging**: Track all authentication events for compliance
 - **Immediate revocation**: Changes to allow list take effect immediately
 - **Admin panel**: Manage users and view audit logs without code deployments
-- **Security first**: Rate limiting, secure cookies, JWT verification, and more
+- **Security first**: Rate limiting, secure cookies, and comprehensive security features
 
 ## Quick Start
 
@@ -90,10 +90,7 @@ SESSION_COOKIE_SECRET=your_session_secret_here
    - **Sign-up URL**: `/auth/login`
    - **After sign-in URL**: `/dashboard`
    - **After sign-up URL**: `/dashboard`
-5. Go to "JWT Templates" and create a new template:
-   - **Name**: `default`
-   - **Issuer**: `https://your-clerk-domain.clerk.accounts.dev`
-   - **Audience**: `your_clerk_api_identifier`
+5. Configure authentication settings as needed
 
 ## Architecture
 
@@ -107,15 +104,15 @@ The application uses two main tables:
 ### Authentication Flow
 
 1. User visits protected page
-2. Middleware checks for valid session/JWT
-3. If no session, redirect to IdP login
-4. After IdP login, verify JWT and check allow list
+2. Clerk middleware checks for valid session
+3. If no session, redirect to Clerk login
+4. After Clerk login, check allow list
 5. Create session if allowed, deny if not
 6. All events logged to audit trail
 
 ### Security Features
 
-- JWT signature verification with JWKS
+- Clerk-managed authentication and JWT verification
 - Case-insensitive email comparison
 - Secure HTTP-only cookies
 - Rate limiting on auth endpoints
@@ -203,7 +200,6 @@ npm test -- auth.test.ts
 
 - Never commit `.env.local` or `.env` files
 - Use strong, unique secrets for production
-- Regularly rotate JWT signing keys
 - Monitor audit logs for suspicious activity
 - Implement rate limiting in production
 - Use HTTPS in production
@@ -214,7 +210,7 @@ npm test -- auth.test.ts
 ### Common Issues
 
 1. **"Email not in allow list"** - Add the user's email to the allow list via admin panel
-2. **JWT verification failed** - Check IDP_ISSUER and JWT_AUDIENCE configuration
+2. **Clerk authentication failed** - Check Clerk configuration and API keys
 3. **Database connection failed** - Verify DATABASE_URL is correct
 4. **CORS errors** - Ensure NEXT_PUBLIC_APP_URL matches your domain
 
@@ -222,8 +218,8 @@ npm test -- auth.test.ts
 
 Set `NODE_ENV=development` to enable:
 - Detailed error messages
-- Mock JWT tokens for testing
 - Additional logging
+- Development-specific Clerk features
 
 ## Contributing
 

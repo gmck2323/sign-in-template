@@ -29,15 +29,15 @@
                v                                    v
         +------+---------------------------+   +----+---------------------+
         |  Web App (Render)                |   |  Allow-List Store       |
-        |  - Next.js/Express/Koa           |   |  (DB table or KV)       |
-        |  - Middleware checks JWT +       |   |  - emails, status       |
+        |  - Next.js with Clerk            |   |  (PostgreSQL)           |
+        |  - Middleware checks session +   |   |  - emails, status       |
         |    email ∈ allow_list            |   |  - roles (optional)     |
         +------+---------------------------+   +----+---------------------+
                |
                v
         +------+---------------------------+
         |  Backend APIs (Render)           |
-        |  - Same JWT + allow-list check   |
+        |  - Same session + allow-list     |
         |  - Fine-grained route guards     |
         +----------------------------------+
 ```
@@ -45,13 +45,13 @@
 ### Notes for Render.com
 
 - Apps (web + APIs) deployed as separate services.
-- Environment variables for IdP secrets, JWT audience/issuer.
+- Environment variables for Clerk configuration.
 - Use a shared database (Render Managed PostgreSQL) for the allow list + audit logs.
 - Optional: private service for admin panel, accessible only to admins on the allow list.
 
 ## 3) Key Requirements
 
-- **AuthN**: OIDC-compliant IdP issues tokens (JWT) after login.
+- **AuthN**: Clerk handles OIDC-compliant authentication and JWT management.
 - **Allow-list enforcement**: block any identity whose primary email is not on the allow list.
 - **Defense in depth**: enforce in UI middleware and every API.
 - **Auditability**: log sign-in attempts (allowed/denied) with timestamp/IP/user agent.
@@ -113,68 +113,99 @@ CREATE TABLE auth_audit_log (
 
 ## 6) Request Flow
 
-1. Unauthenticated request → app middleware detects no valid session/JWT.
-2. Redirect to IdP login (passwordless or SSO).
-3. After successful login, receive ID token (JWT).
-4. App verifies token signature, issuer, audience.
-5. Extract email claim and query `auth_allowed_emails`:
-   - If `active = true` → create session (cookie) and proceed.
+1. Unauthenticated request → Clerk middleware detects no valid session.
+2. Redirect to Clerk login (passwordless or SSO).
+3. After successful login, Clerk handles JWT verification and session management.
+4. Extract email from Clerk session and query `auth_allowed_emails`:
+   - If `active = true` → proceed to requested page.
    - Else → show "Not invited" screen and log `login_deny`.
-6. For every API request, validate session/JWT again and re-check allow list (fast cached).
-7. All auth events are logged to `auth_audit_log`.
+5. For every API request, validate Clerk session and re-check allow list (fast cached).
+6. All auth events are logged to `auth_audit_log`.
 
 ## 7) Enforcement (UI + API)
 
-### UI Middleware (Next.js example)
+### UI Middleware (Next.js with Clerk)
 
 ```typescript
 // middleware.ts
-import { NextResponse } from 'next/server';
-import { verifyJwt } from './lib/jwt';
-import { isEmailAllowed } from './lib/allowlist';
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
-const PUBLIC_PATHS = ['/auth/callback', '/auth/login', '/_next', '/health'];
+const isPublicRoute = createRouteMatcher([
+  '/',
+  '/auth(.*)',
+  '/not-invited',
+  '/health',
+  '/api/health',
+  '/api/auth(.*)'
+]);
 
-export async function middleware(req: Request) {
-  const url = new URL(req.url);
-  if (PUBLIC_PATHS.some(p => url.pathname.startsWith(p))) return NextResponse.next();
+export default clerkMiddleware(async (auth, req) => {
+  // Allow public routes
+  if (isPublicRoute(req)) {
+    return;
+  }
 
-  const token = req.headers.get('Authorization')?.replace('Bearer ', '') 
-              || req.headers.get('Cookie')?.match(/session=([^;]+)/)?.[1];
-
-  if (!token) return NextResponse.redirect(new URL('/auth/login', url.origin));
-
-  const claims = await verifyJwt(token); // checks iss/aud/exp/signature
-  if (!claims?.email) return NextResponse.redirect(new URL('/auth/login', url.origin));
-
-  const ok = await isEmailAllowed(claims.email);
-  if (!ok) return NextResponse.redirect(new URL('/not-invited', url.origin));
-
-  return NextResponse.next();
-}
+  // For protected routes, let Clerk handle authentication
+  await auth.protect();
+});
 ```
 
-### API Guard (Express example)
+### API Guard (Next.js with Clerk)
 
 ```typescript
-// authGuard.ts
-import { verifyJwt } from './jwt';
-import { isEmailAllowed } from './allowlist';
+// api-guard.ts
+import { auth } from '@clerk/nextjs/server';
+import { allowListService } from './allowlist';
 
-export function authGuard() {
-  return async (req, res, next) => {
+export async function createAuthGuard(handler: (context: AuthContext) => Promise<NextResponse>) {
+  return async (request: NextRequest): Promise<NextResponse> => {
     try {
-      const token = (req.headers.authorization || '').replace('Bearer ', '');
-      const claims = await verifyJwt(token);
-      if (!claims?.email) return res.status(401).json({ error: 'Unauthorized' });
+      // Get Clerk auth data
+      const { userId } = await auth();
 
-      if (!(await isEmailAllowed(claims.email))) {
-        return res.status(403).json({ error: 'Forbidden' });
+      if (!userId) {
+        return NextResponse.json(
+          { error: 'Unauthorized - No user session' },
+          { status: 401 }
+        );
       }
-      req.user = claims;
-      next();
-    } catch (e) {
-      return res.status(401).json({ error: 'Unauthorized' });
+
+      // Get user email from Clerk session
+      const { email } = await getSignedInEmail();
+      
+      if (!email) {
+        return NextResponse.json(
+          { error: 'Unauthorized - No email in session' },
+          { status: 401 }
+        );
+      }
+
+      // Check allow list
+      const allowListResult = await allowListService.isEmailAllowed(email);
+      
+      if (!allowListResult.allowed) {
+        return NextResponse.json(
+          { error: 'Forbidden - Access denied' },
+          { status: 403 }
+        );
+      }
+
+      // Create auth context and call handler
+      const context: AuthContext = {
+        user: {
+          email,
+          role: allowListResult.user?.role || 'viewer',
+          display_name: allowListResult.user?.display_name || undefined,
+        },
+        request,
+      };
+
+      return await handler(context);
+    } catch (error) {
+      return NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      );
     }
   };
 }
@@ -199,7 +230,7 @@ On change, invalidate sessions: store a `session_version` in user sessions and b
 
 ## 9) Security Considerations
 
-- **JWT verification**: pin issuer, audience; rotate signing keys (IdP handles this).
+- **JWT verification**: Clerk handles JWT verification, signature validation, and key rotation.
 - **Short session TTL** + silent refresh; secure, HTTP-only, SameSite cookies.
 - **Rate limiting** on login and API endpoints (e.g., IP + email).
 - **Transport security**: HTTPS only; HSTS; CSP for the app.
@@ -218,8 +249,7 @@ On change, invalidate sessions: store a `session_version` in user sessions and b
 
 ### Environment Variables (examples)
 
-- `IDP_ISSUER`, `IDP_CLIENT_ID`, `IDP_CLIENT_SECRET`
-- `JWT_AUDIENCE`, `JWT_DOMAIN`
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`
 - `DATABASE_URL`
 - `SESSION_COOKIE_SECRET`
 - `ALLOWED_REDIRECT_URLS`
@@ -257,9 +287,9 @@ On change, invalidate sessions: store a `session_version` in user sessions and b
 
 ## 13) Testing Strategy
 
-- Unit tests for JWT verification, email normalization, allow-list checks.
+- Unit tests for Clerk integration, email normalization, allow-list checks.
 - Integration tests: login → callback → middleware pass/deny → API deny.
-- Security tests: token replay, expired tokens, malformed JWTs, rate limits.
+- Security tests: session validation, allow-list enforcement, rate limits.
 - Load tests on middleware path to ensure minimal latency.
 
 ## 14) Cutover / Rollout
@@ -271,19 +301,19 @@ On change, invalidate sessions: store a `session_version` in user sessions and b
 
 ## 15) Quick "Getting Started" Checklist
 
-1. Choose IdP (Auth0/Clerk/Stytch/Supabase Auth).
-2. Create IdP app: set callback/logout URLs to your Render domain(s).
+1. Set up Clerk account and create application.
+2. Configure Clerk: set callback/logout URLs to your Render domain(s).
 3. Provision Render Postgres; run schema migrations.
-4. Implement UI middleware + API guard.
-5. Build a minimal admin page to manage allow list.
-6. Configure env vars in Render.
-7. Add audit logging + Slack notifications.
+4. Deploy the application (middleware + API guards included).
+5. Access admin panel to manage allow list.
+6. Configure environment variables in Render.
+7. Add audit logging + Slack notifications (optional).
 8. Test end-to-end on staging; then launch.
 
 ## 16) FAQ
 
-**Q: Can I use a managed IdP while hosting on Render?**
-A: Yes. IdP is independent of hosting. You'll configure OIDC callbacks to your Render app URLs and verify tokens server-side.
+**Q: Can I use Clerk while hosting on Render?**
+A: Yes. Clerk is independent of hosting. You'll configure Clerk callbacks to your Render app URLs and Clerk handles all authentication server-side.
 
 **Q: Is allow-list stored in env vars enough?**
 A: For very small teams, maybe—but DB-backed allow lists + admin UI avoid redeploys and give you audit logs.
