@@ -1,0 +1,183 @@
+# Secure Sign-In Template - Cursor Rules
+
+## Project Overview
+This is a secure sign-in template that implements email-based allow-list authentication using OIDC-compliant identity providers. The solution enforces access control both at the UI middleware level and backend API level, with comprehensive audit logging and admin management capabilities.
+
+## Architecture Principles
+
+### Core Requirements
+- **Email-based allow list**: Only pre-approved users can access the application
+- **Defense in depth**: Enforce authentication at both UI middleware and API levels
+- **OIDC compliance**: Use managed IdP (Auth0/Clerk/Stytch/Supabase) for identity
+- **Multi-app support**: Shared auth across multiple applications/domains
+- **Audit logging**: Track all authentication events for compliance
+- **Immediate revocation**: Changes to allow list take effect immediately
+
+### Technology Stack
+- **Frontend**: Next.js with middleware-based auth enforcement
+- **Backend**: Node.js/Express with API route guards
+- **Database**: PostgreSQL for allow list and audit logs
+- **Hosting**: Render.com with managed PostgreSQL
+- **Identity**: Managed IdP (Auth0/Clerk/Stytch/Supabase Auth)
+
+## Code Standards
+
+### Security First
+- Always validate JWT tokens with proper signature verification
+- Check allow list on every request (UI middleware + API guards)
+- Use secure, HTTP-only, SameSite cookies for sessions
+- Implement rate limiting on auth endpoints
+- Never log sensitive information (passwords, tokens)
+- Use environment variables for all secrets
+
+### Database Schema
+- Use the provided PostgreSQL schema in `docs/solution-design/`
+- Always include audit logging for auth events
+- Use `CITEXT` for email fields for case-insensitive comparison
+- Include proper indexes for performance
+
+### Authentication Flow
+1. Redirect unauthenticated users to IdP
+2. Verify JWT signature, issuer, and audience
+3. Extract email from JWT claims
+4. Check email against `auth_allowed_emails` table
+5. Create session if allowed, deny if not
+6. Log all auth events to `auth_audit_log`
+
+### Error Handling
+- Return appropriate HTTP status codes (401 Unauthorized, 403 Forbidden)
+- Don't leak information about valid vs invalid emails
+- Log all authentication failures for security monitoring
+- Provide user-friendly error messages for denied access
+
+## File Organization
+
+### Directory Structure
+```
+/
+├── docs/solution-design/     # Architecture documentation
+├── src/
+│   ├── middleware/          # Next.js middleware for auth
+│   ├── lib/
+│   │   ├── auth/           # JWT verification, allow list checks
+│   │   ├── database/       # DB connection and queries
+│   │   └── audit/          # Audit logging utilities
+│   ├── components/
+│   │   ├── auth/           # Login, callback, not-invited components
+│   │   └── admin/          # Admin panel components
+│   ├── pages/api/          # API routes with auth guards
+│   └── pages/              # Next.js pages
+├── migrations/              # Database schema migrations
+└── tests/                   # Unit and integration tests
+```
+
+### Naming Conventions
+- Use descriptive names for auth-related functions (`verifyJwt`, `isEmailAllowed`)
+- Prefix admin functions with `admin` (e.g., `adminAddUser`, `adminRemoveUser`)
+- Use consistent naming for audit events (`login_allow`, `login_deny`, `api_allow`, `api_deny`)
+
+## Development Guidelines
+
+### Environment Variables
+Always use these environment variables (never hardcode):
+- `IDP_ISSUER` - JWT issuer URL
+- `IDP_CLIENT_ID` - OIDC client ID
+- `IDP_CLIENT_SECRET` - OIDC client secret
+- `JWT_AUDIENCE` - Expected JWT audience
+- `DATABASE_URL` - PostgreSQL connection string
+- `SESSION_COOKIE_SECRET` - Session encryption key
+- `NODE_ENV` - Environment (development/staging/production)
+
+### Testing Requirements
+- Unit tests for JWT verification and allow list checks
+- Integration tests for complete auth flows
+- Security tests for token replay, expired tokens, malformed JWTs
+- Load tests for middleware performance
+- Test both allowed and denied scenarios
+
+### Admin Panel Features
+- Search and manage allow list emails
+- Toggle user active status
+- View audit logs with filtering
+- Role management (admin/viewer)
+- Bulk operations for user management
+
+### Performance Considerations
+- Cache allow list lookups (with invalidation on changes)
+- Use database indexes on email fields
+- Implement connection pooling for database
+- Keep JWT verification lightweight
+- Use efficient middleware patterns
+
+## Security Checklist
+
+### Before Deployment
+- [ ] JWT verification includes signature, issuer, and audience checks
+- [ ] Allow list is checked on every request
+- [ ] Audit logging is implemented for all auth events
+- [ ] Rate limiting is configured
+- [ ] HTTPS is enforced
+- [ ] Secure cookie settings are applied
+- [ ] Environment variables are properly configured
+- [ ] Database migrations are tested
+- [ ] Error handling doesn't leak sensitive information
+
+### Code Review Focus
+- Authentication logic is properly implemented
+- Database queries are secure (no SQL injection)
+- Error messages don't reveal system information
+- Audit logging captures necessary security events
+- Rate limiting prevents abuse
+- Session management is secure
+
+## Common Patterns
+
+### Middleware Pattern (Next.js)
+```typescript
+export async function middleware(req: Request) {
+  // 1. Check if path is public
+  // 2. Extract token from headers/cookies
+  // 3. Verify JWT
+  // 4. Check allow list
+  // 5. Allow or redirect
+}
+```
+
+### API Guard Pattern (Express)
+```typescript
+export function authGuard() {
+  return async (req, res, next) => {
+    // 1. Extract token
+    // 2. Verify JWT
+    // 3. Check allow list
+    // 4. Set user context or return error
+  };
+}
+```
+
+### Audit Logging Pattern
+```typescript
+await logAuthEvent({
+  email: userEmail,
+  event: 'login_allow' | 'login_deny' | 'api_allow' | 'api_deny',
+  path: requestPath,
+  ip: clientIP,
+  userAgent: req.headers['user-agent']
+});
+```
+
+## Documentation Requirements
+- Keep `docs/solution-design/` updated with any architecture changes
+- Document all environment variables
+- Include setup instructions for local development
+- Document admin panel usage
+- Provide troubleshooting guide for common issues
+
+## Deployment Notes
+- Use Render.com managed PostgreSQL
+- Configure environment variables in Render dashboard
+- Set up proper CORS for multi-app scenarios
+- Implement health checks for monitoring
+- Configure proper logging levels for production
+
+Remember: Security is the top priority. When in doubt, err on the side of being more restrictive rather than less.
