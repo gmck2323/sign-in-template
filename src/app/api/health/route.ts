@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { withRateLimit } from '@/lib/middleware/rate-limit';
+import { withRequestLimits, requestLimitConfigs } from '@/lib/middleware/request-limits';
 
-export async function GET() {
+async function healthHandler() {
   try {
     // Basic health check
     const health = {
@@ -15,10 +17,13 @@ export async function GET() {
     return NextResponse.json(
       { 
         status: 'unhealthy', 
-        error: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
       },
       { status: 500 }
     );
   }
 }
+
+export const GET = withRequestLimits(requestLimitConfigs.api)(
+  withRateLimit({ type: 'api' })(healthHandler)
+);

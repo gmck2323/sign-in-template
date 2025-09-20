@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@clerk/nextjs/server';
 import { getSignedInEmail } from '@/lib/auth/user';
+import { withRateLimit } from '@/lib/middleware/rate-limit';
+import { withRequestLimits, requestLimitConfigs } from '@/lib/middleware/request-limits';
 
-export async function GET(request: NextRequest) {
+async function authCallbackHandler(request: NextRequest) {
   try {
     const { userId } = await auth();
     
@@ -25,3 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth/login', request.url));
   }
 }
+
+export const GET = withRequestLimits(requestLimitConfigs.auth)(
+  withRateLimit({ type: 'auth' })(authCallbackHandler)
+);

@@ -3,6 +3,10 @@ import { auth } from '@clerk/nextjs/server';
 import { getSignedInEmail } from '@/lib/auth/user';
 import { allowListService } from '@/lib/auth/allowlist';
 import { auditLogger } from '@/lib/audit/logger';
+import { withRateLimit } from '@/lib/middleware/rate-limit';
+import { withRequestLimits, requestLimitConfigs } from '@/lib/middleware/request-limits';
+import { withInputSanitization, sanitizationConfigs } from '@/lib/middleware/input-sanitization';
+import { withCSRFProtection, csrfConfigs } from '@/lib/csrf-protection';
 
 async function requireAdmin(handler: (context: { user: { email: string; role: string }; request: NextRequest }) => Promise<NextResponse>) {
   return async (request: NextRequest) => {
@@ -20,7 +24,7 @@ async function requireAdmin(handler: (context: { user: { email: string; role: st
       
       if (!email) {
         return NextResponse.json(
-          { error: 'No email in session' },
+          { error: 'Unauthorized' },
           { status: 401 }
         );
       }
@@ -30,14 +34,14 @@ async function requireAdmin(handler: (context: { user: { email: string; role: st
       
       if (!allowListResult.allowed || !allowListResult.user) {
         return NextResponse.json(
-          { error: 'User not found in allow list' },
+          { error: 'Forbidden' },
           { status: 403 }
         );
       }
 
       if (allowListResult.user.role !== 'admin') {
         return NextResponse.json(
-          { error: 'Admin role required' },
+          { error: 'Forbidden' },
           { status: 403 }
         );
       }
@@ -53,14 +57,14 @@ async function requireAdmin(handler: (context: { user: { email: string; role: st
     } catch (error) {
       console.error('Admin auth error:', error);
       return NextResponse.json(
-        { error: 'Authentication failed' },
+        { error: 'Internal server error' },
         { status: 500 }
       );
     }
   };
 }
 
-export async function GET(request: NextRequest) {
+async function getUsersHandler(request: NextRequest) {
   const adminHandler = await requireAdmin(async (context) => {
     try {
       const { users, error } = await allowListService.getAllUsers();
@@ -78,7 +82,7 @@ export async function GET(request: NextRequest) {
       console.error('Get users error:', error);
       
       return NextResponse.json(
-        { error: 'Failed to get users' },
+        { error: 'Internal server error' },
         { status: 500 }
       );
     }
@@ -87,7 +91,7 @@ export async function GET(request: NextRequest) {
   return adminHandler(request);
 }
 
-export async function POST(request: NextRequest) {
+async function postUsersHandler(request: NextRequest) {
   const adminHandler = await requireAdmin(async (context) => {
     try {
       const { email, display_name, role } = await context.request.json();
@@ -132,7 +136,7 @@ export async function POST(request: NextRequest) {
       console.error('Add user error:', error);
       
       return NextResponse.json(
-        { error: 'Failed to add user' },
+        { error: 'Internal server error' },
         { status: 500 }
       );
     }
@@ -140,6 +144,17 @@ export async function POST(request: NextRequest) {
 
   return adminHandler(request);
 }
+
+export const GET = withRequestLimits(requestLimitConfigs.admin)(
+  withRateLimit({ type: 'admin' })(getUsersHandler)
+);
+export const POST = withCSRFProtection(csrfConfigs.strict)(
+  withInputSanitization(sanitizationConfigs.admin)(
+    withRequestLimits(requestLimitConfigs.admin)(
+      withRateLimit({ type: 'admin' })(postUsersHandler)
+    )
+  )
+);
 
 function getClientIP(request: NextRequest): string {
   const forwarded = request.headers.get('x-forwarded-for');

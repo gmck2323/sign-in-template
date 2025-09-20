@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+// Temporary debug configuration with relaxed CSP for testing Clerk
 const nextConfig = {
   env: {
     CUSTOM_KEY: process.env.CUSTOM_KEY,
@@ -50,22 +51,22 @@ const nextConfig = {
             key: 'Strict-Transport-Security',
             value: 'max-age=31536000; includeSubDomains; preload'
           },
-          // Content Security Policy - Updated for Clerk compatibility
+          // DEBUG: Relaxed CSP for testing Clerk
           {
             key: 'Content-Security-Policy',
             value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev https://clerk.accounts.dev https://*.clerk.accounts.dev",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev https://clerk.accounts.dev https://*.clerk.accounts.dev",
-              "img-src 'self' data: https: blob: https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev https://clerk.accounts.dev https://*.clerk.accounts.dev",
-              "font-src 'self' https://fonts.gstatic.com https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev https://clerk.accounts.dev https://*.clerk.accounts.dev",
-              "connect-src 'self' https://clerk.com https://*.clerk.com https://api.clerk.com https://clerk.dev https://*.clerk.dev https://clerk.accounts.dev https://*.clerk.accounts.dev wss://*.clerk.com wss://*.clerk.dev wss://*.clerk.accounts.dev",
-              "frame-src 'self' https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev https://clerk.accounts.dev https://*.clerk.accounts.dev",
-              "worker-src 'self' blob: https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev",
-              "child-src 'self' blob: https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev",
+              "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:",
+              "style-src 'self' 'unsafe-inline' https: data: blob:",
+              "img-src 'self' data: https: blob:",
+              "font-src 'self' https: data: blob:",
+              "connect-src 'self' https: wss: ws:",
+              "frame-src 'self' https: data: blob:",
+              "worker-src 'self' blob: https:",
+              "child-src 'self' blob: https:",
               "object-src 'none'",
               "base-uri 'self'",
-              "form-action 'self' https://clerk.com https://*.clerk.com https://clerk.dev https://*.clerk.dev",
+              "form-action 'self' https:",
               "frame-ancestors 'none'",
               "upgrade-insecure-requests"
             ].join('; ')

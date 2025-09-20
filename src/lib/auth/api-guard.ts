@@ -23,7 +23,7 @@ export async function createAuthGuard(handler: (context: AuthContext) => Promise
 
       if (!userId) {
         return NextResponse.json(
-          { error: 'Unauthorized - No user session' },
+          { error: 'Unauthorized' },
           { status: 401 }
         );
       }
@@ -42,7 +42,7 @@ export async function createAuthGuard(handler: (context: AuthContext) => Promise
         );
 
         return NextResponse.json(
-          { error: 'Unauthorized - No email in session' },
+          { error: 'Unauthorized' },
           { status: 401 }
         );
       }
@@ -61,7 +61,7 @@ export async function createAuthGuard(handler: (context: AuthContext) => Promise
         );
 
         return NextResponse.json(
-          { error: 'Forbidden - Access denied' },
+          { error: 'Forbidden' },
           { status: 403 }
         );
       }
@@ -123,7 +123,7 @@ export function requireRole(requiredRole: string) {
         );
 
         return NextResponse.json(
-          { error: 'Forbidden - Insufficient permissions' },
+          { error: 'Forbidden' },
           { status: 403 }
         );
       }

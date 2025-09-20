@@ -12,13 +12,36 @@ interface UserProfile {
 }
 
 export default function DashboardPage() {
-  const { isLoaded, isSignedIn, user } = useAuth();
+  const { isLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const response = await fetch('/api/user/profile');
+        
+        if (response.status === 403) {
+          // User not in allow list
+          router.push('/not-invited');
+          return;
+        }
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch user profile');
+        }
+        
+        const profile = await response.json();
+        setUserProfile(profile);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
+
     if (isLoaded && !isSignedIn) {
       router.push('/auth/login');
       return;
@@ -28,29 +51,6 @@ export default function DashboardPage() {
       fetchUserProfile();
     }
   }, [isLoaded, isSignedIn, router]);
-
-  const fetchUserProfile = async () => {
-    try {
-      const response = await fetch('/api/user/profile');
-      
-      if (response.status === 403) {
-        // User not in allow list
-        router.push('/not-invited');
-        return;
-      }
-      
-      if (!response.ok) {
-        throw new Error('Failed to fetch user profile');
-      }
-      
-      const profile = await response.json();
-      setUserProfile(profile);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (!isLoaded || loading) {
     return (
@@ -93,7 +93,7 @@ export default function DashboardPage() {
               Welcome to Your Dashboard!
             </h1>
             <p className="text-lg text-gray-600">
-              You've successfully signed in to the secure authentication system
+              You&apos;ve successfully signed in to the secure authentication system
             </p>
           </div>
 
