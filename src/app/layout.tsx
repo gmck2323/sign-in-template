@@ -21,7 +21,6 @@ export default function RootLayout({
       signInUrl="/auth/login"
       signUpUrl="/auth/login"
       afterSignInUrl="/dashboard"
-      afterSignUpUrl="/dashboard"
     >
       <html lang="en">
         <body className={inter.className}>

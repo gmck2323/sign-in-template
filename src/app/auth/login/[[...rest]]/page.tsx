@@ -101,7 +101,6 @@ export default function LoginPage() {
               path="/auth/login"
               signUpUrl="/auth/login"
               afterSignInUrl="/dashboard"
-              afterSignUpUrl="/dashboard"
               appearance={{
                 elements: {
                   formButtonPrimary: 'bg-blue-600 hover:bg-blue-700 text-white',
